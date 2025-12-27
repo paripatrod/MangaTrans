@@ -21,10 +21,10 @@ const notoSansThai = Noto_Sans_Thai({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://mangatrans.app'),
   title: {
-    default: "MangaTrans - แปลมังงะอัตโนมัติด้วย AI | แปลมังฮวา การ์ตูน",
+    default: "MangaTrans - แปลมังงะอัตโนมัติ | แปลมังฮวา การ์ตูน",
     template: "%s | MangaTrans"
   },
-  description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติด้วย AI รองรับภาษาเกาหลี ญี่ปุ่น จีน อังกฤษ แปลเป็นไทยใน 1 นาที ใช้งานง่าย ฟรี!",
+  description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติ รองรับภาษาเกาหลี ญี่ปุ่น จีน อังกฤษ แปลเป็นไทยใน 1 นาที ใช้งานง่าย ฟรี!",
   keywords: [
     "แปลมังงะ",
     "แปลมังฮวา",
@@ -53,21 +53,21 @@ export const metadata: Metadata = {
     locale: "th_TH",
     url: "/",
     siteName: "MangaTrans",
-    title: "MangaTrans - แปลมังงะอัตโนมัติด้วย AI",
-    description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติด้วย AI รองรับภาษาเกาหลี ญี่ปุ่น จีน อังกฤษ แปลเป็นไทยใน 1 นาที",
+    title: "MangaTrans - แปลมังงะอัตโนมัติ",
+    description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติ รองรับภาษาเกาหลี ญี่ปุ่น จีน อังกฤษ แปลเป็นไทยใน 1 นาที",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "MangaTrans - แปลมังงะอัตโนมัติด้วย AI",
+        alt: "MangaTrans - แปลมังงะอัตโนมัติ",
       }
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "MangaTrans - แปลมังงะอัตโนมัติด้วย AI",
-    description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติด้วย AI รองรับภาษาเกาหลี ญี่ปุ่น จีน",
+    title: "MangaTrans - แปลมังงะอัตโนมัติ",
+    description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติ รองรับภาษาเกาหลี ญี่ปุ่น จีน",
     images: ["/og-image.png"],
   },
   robots: {
@@ -99,7 +99,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   name: "MangaTrans",
-  description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติด้วย AI รองรับหลายภาษา",
+  description: "แปลมังงะ มังฮวา การ์ตูนอัตโนมัติ รองรับหลายภาษา",
   url: "https://mangatrans.app",
   applicationCategory: "UtilitiesApplication",
   operatingSystem: "Web",
