@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,7 +33,16 @@ const BANK_INFO = {
     accountName: "ปริพัฒน์ รอดหยู่"
 };
 
+// Wrap in Suspense for useSearchParams
 export default function PaymentPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-violet-500" /></div>}>
+            <PaymentContent />
+        </Suspense>
+    );
+}
+
+function PaymentContent() {
     const router = useRouter();
     const { data: session, status } = useSession();
     const searchParams = useSearchParams();
