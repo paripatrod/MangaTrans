@@ -1,0 +1,16 @@
+{
+    "root": "backend",
+    "build": {
+        "env": {
+            "NODE_VERSION": "18"
+        }
+    },
+    "routes": [
+        {
+            "src": "/output/(.*)",
+            "headers": {
+                "cache-control": "public, max-age=86400"
+            }
+        }
+    ]
+}
