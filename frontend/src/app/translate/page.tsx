@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSession } from "next-auth/react";
 import Navbar from "@/components/layout/Navbar";
@@ -14,8 +14,10 @@ import {
     RefreshCw,
     Zap,
     Globe,
-    Languages,
-    Image as ImageIcon
+    Upload,
+    Image as ImageIcon,
+    Clock,
+    X
 } from "lucide-react";
 import { Page } from "@/lib/api";
 
@@ -25,6 +27,9 @@ const LANGUAGES = [
     { code: "zh", name: "จีน", flag: "🇨🇳", label: "Manhua" },
     { code: "en", name: "อังกฤษ", flag: "🇺🇸", label: "Comic" },
 ];
+
+// Estimated time per page in seconds
+const SECONDS_PER_PAGE = 8;
 
 export default function TranslatePage() {
     const { data: session } = useSession();
@@ -37,6 +42,17 @@ export default function TranslatePage() {
     const [pages, setPages] = useState<Page[]>([]);
     const [error, setError] = useState("");
 
+    // Upload states
+    const [inputMode, setInputMode] = useState<"url" | "upload">("url");
+    const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+    const [uploadPreviews, setUploadPreviews] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // ETA states
+    const [startTime, setStartTime] = useState<number | null>(null);
+    const [estimatedTotal, setEstimatedTotal] = useState(0);
+    const [timeRemaining, setTimeRemaining] = useState<number>(0);
+
     useEffect(() => {
         if (session?.user?.email) {
             authApi.syncUser({
@@ -48,6 +64,19 @@ export default function TranslatePage() {
         }
     }, [session]);
 
+    // ETA countdown timer
+    useEffect(() => {
+        if (!startTime || status !== "processing") return;
+
+        const interval = setInterval(() => {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const remaining = Math.max(0, estimatedTotal - elapsed);
+            setTimeRemaining(Math.ceil(remaining));
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [startTime, estimatedTotal, status]);
+
     useEffect(() => {
         if (!jobId || status === "completed" || status === "error") return;
 
@@ -57,7 +86,6 @@ export default function TranslatePage() {
                 setStatus(result.status);
                 setProgress(result.progress || 0);
 
-                // Customize messages to be less "AI" and more "Service"
                 let displayMsg = result.message || "";
                 if (result.status === "processing") {
                     if (progress < 30) displayMsg = "กำลังเชื่อมต่อต้นฉบับ...";
@@ -71,7 +99,6 @@ export default function TranslatePage() {
                     const resultPages = result.pages as Page[] || [];
                     setPages(resultPages);
 
-                    // Save to localStorage
                     const { saveTranslation, extractTitleFromUrl } = await import("@/lib/storage");
                     saveTranslation({
                         title: extractTitleFromUrl(url),
@@ -97,10 +124,30 @@ export default function TranslatePage() {
         return () => clearInterval(interval);
     }, [jobId, status, progress, url, sourceLang]);
 
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+
+        setUploadedFiles(prev => [...prev, ...imageFiles]);
+
+        // Generate previews
+        imageFiles.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                setUploadPreviews(prev => [...prev, e.target?.result as string]);
+            };
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const removeFile = (index: number) => {
+        setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+        setUploadPreviews(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Require login before translating
         if (!session) {
             window.location.href = "/login?redirect=/translate";
             return;
@@ -110,14 +157,30 @@ export default function TranslatePage() {
         setStatus("starting");
         setPages([]);
 
+        // Calculate estimated time
+        let pageCount = 10; // Default estimate for URL
+        if (inputMode === "upload") {
+            pageCount = uploadedFiles.length;
+        }
+        const totalSeconds = pageCount * SECONDS_PER_PAGE + 5; // +5 for initial setup
+        setEstimatedTotal(totalSeconds);
+        setStartTime(Date.now());
+        setTimeRemaining(totalSeconds);
+
         try {
-            const result = await translateApi.start({
-                url,
-                sourceLang,
-                targetLang: "th",
-            });
-            setJobId(result.jobId);
-            setStatus("processing");
+            if (inputMode === "url") {
+                const result = await translateApi.start({
+                    url,
+                    sourceLang,
+                    targetLang: "th",
+                });
+                setJobId(result.jobId);
+                setStatus("processing");
+            } else {
+                // Upload mode - TODO: implement upload API
+                setError("ฟีเจอร์อัพโหลดกำลังพัฒนา กรุณาใช้ URL ก่อน");
+                setStatus("idle");
+            }
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : "เกิดข้อผิดพลาด";
             setError(errorMessage);
@@ -133,6 +196,19 @@ export default function TranslatePage() {
         setMessage("");
         setPages([]);
         setError("");
+        setUploadedFiles([]);
+        setUploadPreviews([]);
+        setStartTime(null);
+        setTimeRemaining(0);
+    };
+
+    const formatTime = (seconds: number): string => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        if (mins > 0) {
+            return `${mins} นาที ${secs} วินาที`;
+        }
+        return `${secs} วินาที`;
     };
 
     return (
@@ -140,7 +216,6 @@ export default function TranslatePage() {
             {/* Dynamic Background */}
             <div className="fixed inset-0 -z-10 bg-black">
                 <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-violet-900/10 to-transparent opacity-50" />
-                {/* Orbs */}
                 <motion.div
                     animate={{ y: [0, 30, 0], opacity: [0.3, 0.5, 0.3] }}
                     transition={{ duration: 8, repeat: Infinity }}
@@ -171,7 +246,7 @@ export default function TranslatePage() {
                         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
                             เริ่มอ่าน<span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">มังงะ</span>เลย
                         </h1>
-                        <p className="text-white/50 text-lg sm:text-xl font-light">วางลิงก์ตอนที่อยากอ่าน แล้วเริ่มสนุกได้เลยในไม่กี่วินาที</p>
+                        <p className="text-white/50 text-lg sm:text-xl font-light">วางลิงก์หรืออัพโหลดรูปภาพ แล้วเริ่มสนุกได้เลยในไม่กี่วินาที</p>
                     </motion.div>
 
                     <AnimatePresence mode="wait">
@@ -187,24 +262,105 @@ export default function TranslatePage() {
                                 <div className="absolute top-0 right-0 p-32 bg-violet-500/10 blur-[80px] rounded-full" />
 
                                 <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
-                                    {/* URL Input */}
-                                    <div className="space-y-4">
-                                        <label className="flex items-center gap-2 text-sm font-medium text-white/80 uppercase tracking-wider">
-                                            <Link2 className="w-4 h-4 text-violet-400" />
-                                            URL ต้นฉบับ
-                                        </label>
-                                        <div className="relative group">
-                                            <div className="absolute -inset-0.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-                                            <input
-                                                type="url"
-                                                value={url}
-                                                onChange={(e) => setUrl(e.target.value)}
-                                                className="premium-input bg-[#0f0f13] relative z-10 text-lg placeholder:text-white/20"
-                                                placeholder="วางลิงก์มังงะที่นี่... (เช่น https://example.com/chapter-1)"
-                                                required
-                                            />
-                                        </div>
+                                    {/* Input Mode Toggle */}
+                                    <div className="flex gap-2 p-1 bg-white/5 rounded-xl w-fit">
+                                        <button
+                                            type="button"
+                                            onClick={() => setInputMode("url")}
+                                            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${inputMode === "url"
+                                                    ? "bg-violet-500 text-white shadow-lg"
+                                                    : "text-white/60 hover:text-white"
+                                                }`}
+                                        >
+                                            <Link2 className="w-4 h-4" />
+                                            <span>URL</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setInputMode("upload")}
+                                            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${inputMode === "upload"
+                                                    ? "bg-violet-500 text-white shadow-lg"
+                                                    : "text-white/60 hover:text-white"
+                                                }`}
+                                        >
+                                            <Upload className="w-4 h-4" />
+                                            <span>อัพโหลด</span>
+                                        </button>
                                     </div>
+
+                                    {/* URL Input */}
+                                    {inputMode === "url" && (
+                                        <div className="space-y-4">
+                                            <label className="flex items-center gap-2 text-sm font-medium text-white/80 uppercase tracking-wider">
+                                                <Link2 className="w-4 h-4 text-violet-400" />
+                                                URL ต้นฉบับ
+                                            </label>
+                                            <div className="relative group">
+                                                <div className="absolute -inset-0.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                                                <input
+                                                    type="url"
+                                                    value={url}
+                                                    onChange={(e) => setUrl(e.target.value)}
+                                                    className="premium-input bg-[#0f0f13] relative z-10 text-lg placeholder:text-white/20"
+                                                    placeholder="วางลิงก์มังงะที่นี่... (เช่น https://example.com/chapter-1)"
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Upload Input */}
+                                    {inputMode === "upload" && (
+                                        <div className="space-y-4">
+                                            <label className="flex items-center gap-2 text-sm font-medium text-white/80 uppercase tracking-wider">
+                                                <ImageIcon className="w-4 h-4 text-violet-400" />
+                                                อัพโหลดรูปภาพ
+                                            </label>
+
+                                            {/* Drop zone */}
+                                            <div
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="border-2 border-dashed border-white/20 hover:border-violet-500/50 rounded-2xl p-8 text-center cursor-pointer transition-all hover:bg-violet-500/5"
+                                            >
+                                                <Upload className="w-12 h-12 mx-auto mb-4 text-white/40" />
+                                                <p className="text-white/60 mb-2">คลิกเพื่อเลือกรูปภาพ หรือลากไฟล์มาวาง</p>
+                                                <p className="text-white/40 text-sm">รองรับ JPG, PNG, WEBP</p>
+                                                <input
+                                                    ref={fileInputRef}
+                                                    type="file"
+                                                    accept="image/*"
+                                                    multiple
+                                                    onChange={handleFileSelect}
+                                                    className="hidden"
+                                                />
+                                            </div>
+
+                                            {/* Preview */}
+                                            {uploadPreviews.length > 0 && (
+                                                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                                                    {uploadPreviews.map((preview, index) => (
+                                                        <div key={index} className="relative group aspect-[3/4] rounded-lg overflow-hidden bg-white/5">
+                                                            <img
+                                                                src={preview}
+                                                                alt={`Preview ${index + 1}`}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => removeFile(index)}
+                                                                className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-center py-1 text-xs">
+                                                                {index + 1}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* Language Select */}
                                     <div className="space-y-4">
@@ -251,7 +407,8 @@ export default function TranslatePage() {
                                         whileHover={{ scale: 1.01 }}
                                         whileTap={{ scale: 0.99 }}
                                         type="submit"
-                                        className="w-full premium-btn premium-btn-primary py-5 text-lg font-bold shadow-xl shadow-violet-500/20 hover:shadow-violet-500/40 flex items-center justify-center gap-3"
+                                        disabled={inputMode === "url" ? !url : uploadedFiles.length === 0}
+                                        className="w-full premium-btn premium-btn-primary py-5 text-lg font-bold shadow-xl shadow-violet-500/20 hover:shadow-violet-500/40 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         <Zap className="w-6 h-6 fill-white" />
                                         <span>เริ่มอ่านเดี๋ยวนี้</span>
@@ -261,7 +418,7 @@ export default function TranslatePage() {
                             </motion.div>
                         )}
 
-                        {/* Processing */}
+                        {/* Processing with ETA */}
                         {(status === "starting" || status === "processing") && (
                             <motion.div
                                 key="processing"
@@ -291,9 +448,18 @@ export default function TranslatePage() {
                                             animate={{ width: `${progress}%` }}
                                         />
                                     </div>
-                                    <div className="flex justify-between text-sm text-white/40 font-mono">
-                                        <span>Loading</span>
-                                        <span>{progress}%</span>
+                                    <div className="flex justify-between text-sm font-mono mb-6">
+                                        <span className="text-white/40">Loading</span>
+                                        <span className="text-white/60">{progress}%</span>
+                                    </div>
+
+                                    {/* ETA Countdown */}
+                                    <div className="flex items-center justify-center gap-3 p-4 bg-white/5 rounded-xl border border-white/10">
+                                        <Clock className="w-5 h-5 text-violet-400" />
+                                        <span className="text-white/60">เวลาโดยประมาณ:</span>
+                                        <span className="text-white font-bold text-lg">
+                                            {timeRemaining > 0 ? formatTime(timeRemaining) : "กำลังเสร็จแล้ว..."}
+                                        </span>
                                     </div>
                                 </div>
                             </motion.div>
