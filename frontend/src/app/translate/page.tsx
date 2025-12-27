@@ -364,10 +364,10 @@ export default function TranslatePage() {
 
                                 {/* Results Grid */}
                                 <div className="flex flex-col gap-0 max-w-3xl mx-auto bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-                                    {pages.map((page, index) => (
+                                    {pages.filter(page => page.translatedUrl).map((page, index) => (
                                         <div key={index} className="relative group min-h-[200px] bg-[#111]">
                                             <img
-                                                src={page.translatedUrl.startsWith('http') ? page.translatedUrl : `http://localhost:5000${page.translatedUrl}`}
+                                                src={page.translatedUrl!.startsWith('http') ? page.translatedUrl! : `https://mangatrans.onrender.com${page.translatedUrl}`}
                                                 alt={`หน้า ${index + 1}`}
                                                 className="w-full h-auto block"
                                                 loading="lazy"
