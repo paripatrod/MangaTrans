@@ -49,9 +49,9 @@ async function inpaintWithReplicate(imageBuffer, textBlocks) {
     const imageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`;
     const maskBase64 = `data:image/png;base64,${maskBuffer.toString('base64')}`;
 
-    // Run LAMA model (use model name only - Replicate will use latest version)
+    // Run LAMA model (andreasjansson/lama - Resolution-robust Large Mask Inpainting)
     const output = await replicate.run(
-        "zylim0702/remove-object",
+        "andreasjansson/lama:98ddf31e4276166ab93a90325492fd0cc7d23d9b012b1e42df08271708457008",
         {
             input: {
                 image: imageBase64,
