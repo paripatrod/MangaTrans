@@ -8,9 +8,11 @@
         "dev": "node server.js"
     },
     "dependencies": {
+        "@fontsource/sarabun": "^5.2.8",
         "@google/generative-ai": "^0.24.1",
         "axios": "^1.6.2",
         "bcryptjs": "^3.0.3",
+        "canvas": "^3.2.0",
         "cheerio": "^1.0.0-rc.12",
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",

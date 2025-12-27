@@ -309,126 +309,25 @@ async function translateTextBlocks(textBlocks, sourceLang, targetLang) {
 }
 
 /**
- * Render translated text onto image with AI Inpainting and Sharp SVG Overlay
- * Uses embedded base64 Thai font for reliable server-side rendering
+ * Render translated text onto image with AI Inpainting and Canvas API
+ * Uses node-canvas with Sarabun Thai font for reliable rendering
  */
 async function renderTranslatedText(imageBuffer, textBlocks) {
     const { removeTextWithAI } = require('./aiInpainting');
-    const { createFontStyle } = require('./fontManager');
+    const { renderTextWithCanvas } = require('./canvasRenderer');
 
-    // 1. Use AI Inpainting to remove original text
+    // 1. Use Inpainting to remove original text
     console.log('   🎨 Removing original text...');
     const cleanedBuffer = await removeTextWithAI(imageBuffer, textBlocks);
 
-    // Get image dimensions
-    const metadata = await sharp(cleanedBuffer).metadata();
-    const imgWidth = metadata.width;
-    const imgHeight = metadata.height;
-
-    // 2. Create SVG overlays for translated text
-    const svgPromises = textBlocks.map(async (block) => {
-        try {
-            const { bounds, translatedText } = block;
-
-            if (!translatedText || translatedText.trim() === '') return null;
-            if (!bounds || bounds.width <= 0 || bounds.height <= 0) return null;
-
-            // IMPROVED Font Size Calculation
-            // Consider both area AND text length for optimal sizing
-            const area = bounds.width * bounds.height;
-            const textLen = translatedText.length;
-
-            // Base size from area
-            let fontSize = Math.sqrt(area) / 6;
-
-            // Adjust for text length (longer text = smaller font)
-            if (textLen > 30) fontSize *= 0.8;
-            if (textLen > 50) fontSize *= 0.7;
-            if (textLen > 80) fontSize *= 0.6;
-
-            // Clamp to reasonable range
-            if (fontSize < 14) fontSize = 14;
-            if (fontSize > 48) fontSize = 48;
-
-            // Estimate chars per line
-            const charWidth = fontSize * 0.6; // Thai chars are roughly 60% of height
-            const maxCharsPerLine = Math.max(1, Math.floor(bounds.width / charWidth));
-            const lines = splitTextToLines(translatedText, maxCharsPerLine);
-
-            // If too many lines, shrink font
-            const maxLines = Math.floor(bounds.height / (fontSize * 1.3));
-            if (lines.length > maxLines && maxLines > 0) {
-                const scale = maxLines / lines.length;
-                fontSize = Math.max(12, fontSize * scale);
-                // Recalculate lines with new font size
-                const newMaxChars = Math.max(1, Math.floor(bounds.width / (fontSize * 0.6)));
-                lines.length = 0;
-                lines.push(...splitTextToLines(translatedText, newMaxChars));
-            }
-
-            // Calculate vertical centering
-            const lineHeight = 1.25;
-            const totalTextHeight = lines.length * lineHeight * fontSize;
-            let startY = (bounds.height - totalTextHeight) / 2 + fontSize * 0.85; // Adjust for baseline
-
-            if (startY < fontSize) startY = fontSize;
-
-            // Detect if shout/emphasis
-            const isShout = translatedText.includes('!') || (translatedText.length < 5 && !translatedText.includes(' '));
-            const fontWeight = isShout ? '700' : 'normal';
-            const color = 'black';
-
-            // Get embedded font style (with base64 font if available)
-            const fontStyle = await createFontStyle(fontSize, fontWeight, color);
-
-            // Construct SVG with tspans for each line
-            const tspanLines = lines.map((line, i) => {
-                const escaped = escapeHtml(line);
-                const dy = i === 0 ? 0 : `${lineHeight}em`;
-                return `<tspan x="50%" dy="${dy}">${escaped}</tspan>`;
-            }).join('');
-
-            // SVG with embedded base64 font
-            const svg = `
-            <svg width="${bounds.width}" height="${bounds.height}" viewBox="0 0 ${bounds.width} ${bounds.height}" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <style type="text/css">
-                        ${fontStyle}
-                    </style>
-                </defs>
-                <text x="50%" y="${startY}" text-anchor="middle" class="text">
-                    ${tspanLines}
-                </text>
-            </svg>
-            `;
-
-            return {
-                input: Buffer.from(svg),
-                top: Math.round(bounds.y),
-                left: Math.round(bounds.x)
-            };
-        } catch (err) {
-            console.warn('Error creating SVG composite:', err.message);
-            return null;
-        }
-    });
-
-    const svgComposites = (await Promise.all(svgPromises)).filter(x => x !== null);
-
-    // 3. Composite text using Sharp
-    if (svgComposites.length > 0) {
-        try {
-            return await sharp(cleanedBuffer)
-                .composite(svgComposites)
-                .png()
-                .toBuffer();
-        } catch (sharpError) {
-            console.error('Sharp composite failed:', sharpError.message);
-            return cleanedBuffer;
-        }
+    // 2. Render translated text using Canvas API
+    console.log('   ✏️ Rendering translated text with Canvas...');
+    try {
+        return await renderTextWithCanvas(cleanedBuffer, textBlocks);
+    } catch (error) {
+        console.error('   ❌ Canvas rendering failed:', error.message);
+        return cleanedBuffer;
     }
-
-    return cleanedBuffer;
 }
 
 function splitTextToLines(text, maxChars) {
