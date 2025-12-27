@@ -8,8 +8,9 @@ const fs = require('fs');
 const path = require('path');
 
 const FONT_DIR = path.join(__dirname, '../fonts');
-const FONT_URL = 'https://github.com/nicholasc/noto-sans-thai/raw/master/fonts/NotoSansThai-Regular.ttf';
-const FONT_FILE = path.join(FONT_DIR, 'NotoSansThai-Regular.ttf');
+// Use Sarabun from a reliable CDN
+const FONT_URL = 'https://fonts.gstatic.com/s/sarabun/v15/DtVmJx26TKEr37c9YL5rilwm.ttf';
+const FONT_FILE = path.join(FONT_DIR, 'Sarabun-Regular.ttf');
 
 let cachedFontBase64 = null;
 
@@ -24,7 +25,7 @@ async function ensureFont() {
 
     // Download font if not exists
     if (!fs.existsSync(FONT_FILE)) {
-        console.log('📥 Downloading Noto Sans Thai font...');
+        console.log('📥 Downloading Sarabun Thai font...');
         try {
             const response = await axios.get(FONT_URL, {
                 responseType: 'arraybuffer',
