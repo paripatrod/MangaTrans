@@ -656,47 +656,53 @@ async function saveImage(imageBuffer, jobId, pageNumber, suffix) {
 async function translateImages(imageUrls, sourceLang, targetLang, jobId, progressCallback, referer) {
     const results = [];
     const total = imageUrls.length;
+    const CONCURRENCY_LIMIT = 3; // Process 3 pages at once for speed
 
-    for (let i = 0; i < imageUrls.length; i++) {
+    // Helper wrapper to catch errors and return consistent result format
+    const processPageWrapper = async (url, index) => {
         try {
             const result = await translateImage(
-                imageUrls[i],
-                sourceLang,
-                targetLang,
-                jobId,
-                i + 1,
-                referer
+                url, sourceLang, targetLang, jobId, index + 1, referer
             );
-
-            results.push({
-                pageNumber: i + 1,
-                originalUrl: imageUrls[i],
+            return {
+                pageNumber: index + 1,
+                originalUrl: url,
                 translatedUrl: result.translatedPath,
                 hasText: result.hasText
-            });
-
-            // Report progress
-            if (progressCallback) {
-                const progress = Math.round(((i + 1) / total) * 100);
-                progressCallback(progress, `กำลังแปลหน้า ${i + 1}/${total}`);
-            }
-
+            };
         } catch (error) {
-            console.error(`Failed to translate page ${i + 1}:`, error.message);
-            results.push({
-                pageNumber: i + 1,
-                originalUrl: imageUrls[i],
+            console.error(`Failed to translate page ${index + 1}:`, error.message);
+            return {
+                pageNumber: index + 1,
+                originalUrl: url,
                 translatedUrl: null,
                 hasText: false,
                 error: error.message
-            });
+            };
         }
+    };
 
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+    // Process in chunks to respect API limits but significantly faster
+    for (let i = 0; i < total; i += CONCURRENCY_LIMIT) {
+        const chunk = imageUrls.slice(i, i + CONCURRENCY_LIMIT);
+        console.log(`🚀 Starting batch ${Math.floor(i / CONCURRENCY_LIMIT) + 1} (Pages ${i + 1}-${Math.min(i + CONCURRENCY_LIMIT, total)})`);
+
+        // Execute batch in parallel
+        const chunkResults = await Promise.all(
+            chunk.map((url, idx) => processPageWrapper(url, i + idx))
+        );
+
+        results.push(...chunkResults);
+
+        // Report progress
+        if (progressCallback) {
+            const progress = Math.round((results.length / total) * 100);
+            progressCallback(progress, `กำลังแปล... (${results.length}/${total})`);
+        }
     }
 
-    return results;
+    // Sort by page number to be safe
+    return results.sort((a, b) => a.pageNumber - b.pageNumber);
 }
 
 module.exports = {

@@ -45,7 +45,7 @@ async function translateWithGemini(texts, sourceLang, targetLang) {
         try {
             console.log(`   🔄 Processing Batch ${Math.floor(batch.index / BATCH_SIZE) + 1}/${batches.length}...`);
 
-            if (batch.index > 0) await new Promise(r => setTimeout(r, 3000));
+            if (batch.index > 0) await new Promise(r => setTimeout(r, 1000));
 
             const translatedChunk = await processBatchWithRetry(batch.chunk, sourceLang, targetLang);
 
