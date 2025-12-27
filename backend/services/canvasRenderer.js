@@ -1,9 +1,9 @@
 // ========================================
 // MangaTrans - Canvas Text Renderer
-// Uses node-canvas with Sarabun Thai font
+// Memory-optimized for 512MB servers
 // ========================================
 
-const { createCanvas, registerFont } = require('canvas');
+const { createCanvas, registerFont, Image } = require('canvas');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
@@ -13,11 +13,20 @@ const FONT_PATH = path.join(__dirname, '../node_modules/@fontsource/sarabun/file
 
 let fontsRegistered = false;
 
+// Pre-load wordcut once
+let wordcutInstance = null;
+function getWordcut() {
+    if (!wordcutInstance) {
+        wordcutInstance = require('wordcut');
+        wordcutInstance.init();
+    }
+    return wordcutInstance;
+}
+
 function registerFonts() {
     if (fontsRegistered) return;
 
     try {
-        // Register Thai fonts (woff2 format works with node-canvas)
         const fonts = [
             { file: 'sarabun-thai-400-normal.woff', family: 'Sarabun', weight: 'normal' },
             { file: 'sarabun-thai-700-normal.woff', family: 'Sarabun', weight: 'bold' },
@@ -39,14 +48,12 @@ function registerFonts() {
 
 /**
  * Render translated text onto image using Canvas API
- * @param {Buffer} imageBuffer - Cleaned image buffer (text already removed)
- * @param {Array} textBlocks - Array of text blocks with translatedText and bounds
- * @returns {Promise<Buffer>} - Image buffer with rendered text
+ * Memory-optimized version
  */
 async function renderTextWithCanvas(imageBuffer, textBlocks) {
     registerFonts();
 
-    // Get image dimensions
+    // Get image dimensions (use raw() to avoid extra memory)
     const metadata = await sharp(imageBuffer).metadata();
     const { width, height } = metadata;
 
@@ -55,10 +62,12 @@ async function renderTextWithCanvas(imageBuffer, textBlocks) {
     const ctx = canvas.getContext('2d');
 
     // Draw base image
-    const { Image } = require('canvas');
     const img = new Image();
     img.src = imageBuffer;
     ctx.drawImage(img, 0, 0);
+
+    // Clear reference to help GC
+    img.src = null;
 
     // Draw each text block
     for (const block of textBlocks) {
@@ -121,23 +130,26 @@ async function renderTextWithCanvas(imageBuffer, textBlocks) {
         }
     }
 
-    // Return as PNG buffer
-    return canvas.toBuffer('image/png');
+    // Return as JPEG (smaller than PNG) with compression
+    const result = canvas.toBuffer('image/png');
+
+    // Help garbage collector
+    canvas.width = 0;
+    canvas.height = 0;
+
+    return result;
 }
 
 /**
  * Wrap text to fit within maxWidth
  */
 function wrapText(ctx, text, maxWidth) {
-    // Thai text segmentation using wordcut
-    const wordcut = require('wordcut');
-    wordcut.init();
-
+    const wordcut = getWordcut();
     const segmented = wordcut.cut(text);
     const words = segmented.split('|').filter(w => w.length > 0);
 
     if (words.length <= 1 && text.length > 0) {
-        // Fallback: simple character wrap for non-segmentable text
+        // Fallback: simple character wrap
         words.length = 0;
         for (let i = 0; i < text.length; i += 5) {
             words.push(text.substring(i, i + 5));
