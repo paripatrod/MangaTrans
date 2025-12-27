@@ -310,10 +310,11 @@ async function translateTextBlocks(textBlocks, sourceLang, targetLang) {
 
 /**
  * Render translated text onto image with AI Inpainting and Sharp SVG Overlay
- * BEST TIER: Uses ClipDrop API for professional background reconstruction
+ * Uses embedded base64 Thai font for reliable server-side rendering
  */
 async function renderTranslatedText(imageBuffer, textBlocks) {
     const { removeTextWithAI } = require('./aiInpainting');
+    const { createFontStyle } = require('./fontManager');
 
     // 1. Use AI Inpainting to remove original text
     console.log('   🎨 Removing original text...');
@@ -325,7 +326,7 @@ async function renderTranslatedText(imageBuffer, textBlocks) {
     const imgHeight = metadata.height;
 
     // 2. Create SVG overlays for translated text
-    const svgComposites = textBlocks.map(block => {
+    const svgPromises = textBlocks.map(async (block) => {
         try {
             const { bounds, translatedText } = block;
 
@@ -377,6 +378,9 @@ async function renderTranslatedText(imageBuffer, textBlocks) {
             const fontWeight = isShout ? '700' : 'normal';
             const color = 'black';
 
+            // Get embedded font style (with base64 font if available)
+            const fontStyle = await createFontStyle(fontSize, fontWeight, color);
+
             // Construct SVG with tspans for each line
             const tspanLines = lines.map((line, i) => {
                 const escaped = escapeHtml(line);
@@ -384,17 +388,14 @@ async function renderTranslatedText(imageBuffer, textBlocks) {
                 return `<tspan x="50%" dy="${dy}">${escaped}</tspan>`;
             }).join('');
 
-            // SVG with embedded font stack
+            // SVG with embedded base64 font
             const svg = `
-            <svg width="${bounds.width}" height="${bounds.height}" viewBox="0 0 ${bounds.width} ${bounds.height}">
-                <style>
-                    .text { 
-                        font-family: "Sarabun", "Prompt", "Leelawadee UI", "Tahoma", sans-serif; 
-                        font-weight: ${fontWeight};
-                        fill: ${color};
-                        font-size: ${fontSize}px;
-                    }
-                </style>
+            <svg width="${bounds.width}" height="${bounds.height}" viewBox="0 0 ${bounds.width} ${bounds.height}" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <style type="text/css">
+                        ${fontStyle}
+                    </style>
+                </defs>
                 <text x="50%" y="${startY}" text-anchor="middle" class="text">
                     ${tspanLines}
                 </text>
@@ -410,7 +411,9 @@ async function renderTranslatedText(imageBuffer, textBlocks) {
             console.warn('Error creating SVG composite:', err.message);
             return null;
         }
-    }).filter(x => x !== null);
+    });
+
+    const svgComposites = (await Promise.all(svgPromises)).filter(x => x !== null);
 
     // 3. Composite text using Sharp
     if (svgComposites.length > 0) {

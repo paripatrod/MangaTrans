@@ -9,8 +9,9 @@
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const MODEL_NAME = "gemini-2.0-flash-exp";
-const API_KEY = process.env.GOOGLE_API_KEY;
+// ULTRA FAST: Gemini 2.5 Flash Preview with dedicated API key
+const MODEL_NAME = "gemini-2.5-flash-preview-05-20";
+const API_KEY = "AIzaSyBLSLZ11cz7VlIRahecV9JxNxoLJVPo1Kg";
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: MODEL_NAME });
@@ -45,7 +46,7 @@ async function translateWithGemini(texts, sourceLang, targetLang) {
         try {
             console.log(`   🔄 Processing Batch ${Math.floor(batch.index / BATCH_SIZE) + 1}/${batches.length}...`);
 
-            if (batch.index > 0) await new Promise(r => setTimeout(r, 1000));
+            // No delay - maximum speed with Gemini 2.5 Flash
 
             const translatedChunk = await processBatchWithRetry(batch.chunk, sourceLang, targetLang);
 

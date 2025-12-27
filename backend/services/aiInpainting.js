@@ -1,69 +1,20 @@
 // ========================================
 // MangaTrans - AI Inpainting Service
-// Uses Replicate LAMA for professional text removal
+// Uses gradient fill for text removal (No external API needed)
 // ========================================
 
-const Replicate = require('replicate');
-const axios = require('axios');
 const sharp = require('sharp');
 const Jimp = require('jimp');
 
-// Replicate API Token
-const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
-
 /**
- * Remove text from image using AI inpainting
+ * Remove text from image using gradient fill inpainting
  * @param {Buffer} imageBuffer - Original image buffer
  * @param {Array} textBlocks - Array of text blocks with bounds
  * @returns {Promise<Buffer>} - Cleaned image buffer
  */
 async function removeTextWithAI(imageBuffer, textBlocks) {
-    if (REPLICATE_API_TOKEN) {
-        try {
-            console.log('   🎨 Using Replicate LAMA for inpainting...');
-            return await inpaintWithReplicate(imageBuffer, textBlocks);
-        } catch (error) {
-            console.warn('   ⚠️ Replicate failed:', error.message);
-            console.log('   ⚠️ Falling back to gradient fill...');
-        }
-    } else {
-        console.log('   ⚠️ No REPLICATE_API_TOKEN. Using fallback inpainting.');
-    }
-
+    console.log('   🎨 Using gradient fill for text removal...');
     return await fallbackInpaint(imageBuffer, textBlocks);
-}
-
-/**
- * Inpaint using Replicate LAMA model
- * Model: https://replicate.com/zylim0702/remove-object
- */
-async function inpaintWithReplicate(imageBuffer, textBlocks) {
-    const replicate = new Replicate({
-        auth: REPLICATE_API_TOKEN
-    });
-
-    // Create mask
-    const maskBuffer = await createMask(imageBuffer, textBlocks);
-
-    // Convert buffers to base64 data URIs
-    const imageBase64 = `data:image/png;base64,${imageBuffer.toString('base64')}`;
-    const maskBase64 = `data:image/png;base64,${maskBuffer.toString('base64')}`;
-
-    // Run LAMA model (andreasjansson/lama - Resolution-robust Large Mask Inpainting)
-    const output = await replicate.run(
-        "andreasjansson/lama:98ddf31e4276166ab93a90325492fd0cc7d23d9b012b1e42df08271708457008",
-        {
-            input: {
-                image: imageBase64,
-                mask: maskBase64
-            }
-        }
-    );
-
-    // Download result
-    console.log('   ✅ LAMA inpainting complete!');
-    const response = await axios.get(output, { responseType: 'arraybuffer' });
-    return Buffer.from(response.data);
 }
 
 /**
