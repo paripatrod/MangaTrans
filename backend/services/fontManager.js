@@ -1,90 +1,50 @@
 // ========================================
 // MangaTrans - Font Manager
-// Downloads and manages Thai fonts for SVG rendering
+// Uses Arial fallback for server-side SVG rendering
+// (Sharp/librsvg doesn't support web fonts without local install)
 // ========================================
 
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
 const FONT_DIR = path.join(__dirname, '../fonts');
-// Use Sarabun from a reliable CDN
-const FONT_URL = 'https://fonts.gstatic.com/s/sarabun/v15/DtVmJx26TKEr37c9YL5rilwm.ttf';
-const FONT_FILE = path.join(FONT_DIR, 'Sarabun-Regular.ttf');
 
-let cachedFontBase64 = null;
+let fontChecked = false;
 
 /**
- * Ensure the Thai font is downloaded and ready
+ * Ensure fonts directory exists
  */
 async function ensureFont() {
+    if (fontChecked) return null;
+
     // Create fonts directory if not exists
     if (!fs.existsSync(FONT_DIR)) {
         fs.mkdirSync(FONT_DIR, { recursive: true });
     }
 
-    // Download font if not exists
-    if (!fs.existsSync(FONT_FILE)) {
-        console.log('📥 Downloading Sarabun Thai font...');
-        try {
-            const response = await axios.get(FONT_URL, {
-                responseType: 'arraybuffer',
-                timeout: 30000
-            });
-            fs.writeFileSync(FONT_FILE, Buffer.from(response.data));
-            console.log('✅ Font downloaded successfully!');
-        } catch (error) {
-            console.error('❌ Failed to download font:', error.message);
-            // Use fallback - the font may not be available but we continue
-            return null;
-        }
-    }
-
-    return FONT_FILE;
+    fontChecked = true;
+    return null; // No custom font - use system fallbacks
 }
 
 /**
  * Get font as base64 for embedding in SVG
+ * Returns null - we use system font fallbacks instead
  */
 async function getFontBase64() {
-    if (cachedFontBase64) return cachedFontBase64;
-
-    const fontPath = await ensureFont();
-    if (!fontPath || !fs.existsSync(fontPath)) {
-        return null;
-    }
-
-    const fontBuffer = fs.readFileSync(fontPath);
-    cachedFontBase64 = fontBuffer.toString('base64');
-    return cachedFontBase64;
+    return null; // Use system fallbacks
 }
 
 /**
- * Create SVG style with embedded font (works offline in sharp)
+ * Create SVG style - uses Arial which is available on most systems
+ * For Thai text on Linux servers without Thai fonts, text may render as boxes
+ * but this is the most reliable cross-platform approach
  */
 async function createFontStyle(fontSize, fontWeight, color) {
-    const fontBase64 = await getFontBase64();
-
-    if (!fontBase64) {
-        // Fallback to system fonts
-        return `
-            .text { 
-                font-family: Arial, Helvetica, sans-serif; 
-                font-weight: ${fontWeight};
-                fill: ${color};
-                font-size: ${fontSize}px;
-            }
-        `;
-    }
-
+    // Use a font stack that works across platforms
+    // Arial for Latin, system fonts for Thai (if available)
     return `
-        @font-face {
-            font-family: 'ThaiFont';
-            src: url('data:font/truetype;base64,${fontBase64}') format('truetype');
-            font-weight: normal;
-        }
         .text { 
-            font-family: 'ThaiFont', Arial, sans-serif; 
+            font-family: Arial, Helvetica, "Noto Sans Thai", "Sarabun", sans-serif; 
             font-weight: ${fontWeight};
             fill: ${color};
             font-size: ${fontSize}px;
@@ -96,6 +56,5 @@ module.exports = {
     ensureFont,
     getFontBase64,
     createFontStyle,
-    FONT_DIR,
-    FONT_FILE
+    FONT_DIR
 };
