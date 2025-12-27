@@ -19,6 +19,7 @@ const paymentRoutes = require('./routes/payment');
 const promptpayRoutes = require('./routes/promptpay');
 
 const app = express();
+app.set('trust proxy', 1); // Fix: Trust proxy for Render/Vercel and Rate Limit
 const PORT = process.env.PORT || 5000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
