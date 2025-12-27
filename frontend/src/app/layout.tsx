@@ -19,7 +19,7 @@ const notoSansThai = Noto_Sans_Thai({
 
 // SEO Metadata
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://manga-trans.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://mangatrans.xyz'),
   title: {
     default: "MangaTrans - แปลมังงะอัตโนมัติ | แปลมังฮวา การ์ตูน",
     template: "%s | MangaTrans"
