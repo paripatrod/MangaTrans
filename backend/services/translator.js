@@ -614,14 +614,14 @@ async function translateLocalImage(imagePath, sourceLang, targetLang, jobId, pag
     console.log(`📖 Processing uploaded page ${pageNumber}: ${path.basename(imagePath)}`);
 
     try {
-        // 1. Read local file
+        // 1. Read local file and convert to PNG
         const imageData = fs.readFileSync(imagePath);
         const imageBuffer = await sharp(imageData).png().toBuffer();
 
-        // 2. OCR
-        const textBlocks = await detectText(imageBuffer, sourceLang);
+        // 2. Perform OCR to get text and positions
+        const ocrResult = await performOCR(imageBuffer, sourceLang);
 
-        if (!textBlocks || textBlocks.length === 0) {
+        if (!ocrResult.textBlocks || ocrResult.textBlocks.length === 0) {
             console.log(`   ⚪ No text found on page ${pageNumber}`);
             const savedPath = await saveImage(imageBuffer, jobId, pageNumber, 'translated');
             return {
@@ -630,38 +630,25 @@ async function translateLocalImage(imagePath, sourceLang, targetLang, jobId, pag
             };
         }
 
-        // 3. Group into speech bubbles
-        const speechBubbles = groupIntoSpeechBubbles(textBlocks);
-        console.log(`   📝 Found ${speechBubbles.length} text blocks`);
+        console.log(`   📝 Found ${ocrResult.textBlocks.length} text blocks`);
 
-        // 4. Filter speech bubbles
-        const filteredBubbles = speechBubbles.filter(bubble =>
-            bubble.text.length > 1 &&
-            !isSfxOrBackground(bubble.text)
-        );
+        // 3. Filter out non-speech bubbles (SFX/Background text)
+        const speechBubbles = await filterSpeechBubbles(imageBuffer, ocrResult.textBlocks);
+        console.log(`   💬 Identified ${speechBubbles.length} speech bubbles (filtered ${ocrResult.textBlocks.length - speechBubbles.length} SFX/Background)`);
 
-        console.log(`   💬 Identified ${filteredBubbles.length} speech bubbles`);
-
-        if (filteredBubbles.length === 0) {
+        if (speechBubbles.length === 0) {
+            console.log(`   ℹ️ No speech bubbles found on page ${pageNumber}`);
             const savedPath = await saveImage(imageBuffer, jobId, pageNumber, 'translated');
             return { translatedPath: savedPath, hasText: false };
         }
 
-        // 5. Translate
-        const textsToTranslate = filteredBubbles.map(b => b.text);
-        const translations = await translateWithGemini(textsToTranslate, sourceLang, targetLang);
+        // 4. Translate ONLY speech bubbles
+        const translatedBlocks = await translateTextBlocks(speechBubbles, sourceLang, targetLang);
 
-        // 6. Map translations back to bubbles
-        const translatedBubbles = filteredBubbles.map((bubble, i) => ({
-            ...bubble,
-            translatedText: translations[i] || bubble.text,
-            bounds: bubble.bounds
-        }));
+        // 5. Render translated text on image
+        const translatedBuffer = await renderTranslatedText(imageBuffer, translatedBlocks);
 
-        // 7. Render translated text
-        const translatedBuffer = await renderTranslatedText(imageBuffer, translatedBubbles);
-
-        // 8. Save
+        // 6. Save and return
         const savedPath = await saveImage(translatedBuffer, jobId, pageNumber, 'translated');
 
         console.log(`   ✅ Page ${pageNumber} completed`);
