@@ -11,7 +11,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // ULTRA FAST: Gemini 2.0 Flash from Google AI Studio
 const MODEL_NAME = "gemini-3-flash-preview";
-const API_KEY = "AIzaSyCOvOYOxUe-7gmYiUDkGNvy_cNLUO1bNWA";
+const API_KEY = process.env.GEMINI_API_KEY;
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: MODEL_NAME });
