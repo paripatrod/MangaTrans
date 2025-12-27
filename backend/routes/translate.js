@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const Translation = require('../models/Translation');
 const User = require('../models/User');
 const { scrapeImages } = require('../services/scraper');
-const { translateImages } = require('../services/translator');
+const { translateImages, translateUploadedImages } = require('../services/translator');
 
 // In-memory job storage for real-time progress
 const jobs = new Map();
@@ -263,4 +266,196 @@ function extractTitle(url) {
     }
 }
 
+// ============================================
+// Image Upload Support
+// ============================================
+
+// Configure multer for file uploads
+const UPLOAD_DIR = path.join(__dirname, '../uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const jobDir = path.join(UPLOAD_DIR, req.uploadJobId || 'temp');
+        if (!fs.existsSync(jobDir)) {
+            fs.mkdirSync(jobDir, { recursive: true });
+        }
+        cb(null, jobDir);
+    },
+    filename: (req, file, cb) => {
+        // Keep original order using index
+        const index = String(req.fileIndex || 0).padStart(3, '0');
+        req.fileIndex = (req.fileIndex || 0) + 1;
+        const ext = path.extname(file.originalname) || '.png';
+        cb(null, `page_${index}${ext}`);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (allowed.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files allowed'));
+        }
+    }
+});
+
+// Middleware to set job ID before upload
+const prepareUpload = (req, res, next) => {
+    req.uploadJobId = uuidv4();
+    req.fileIndex = 0;
+    next();
+};
+
+// Upload endpoint
+router.post('/upload', optionalAuth, prepareUpload, upload.array('images', 50), async (req, res) => {
+    try {
+        const { sourceLang, targetLang, title } = req.body;
+        const userEmail = req.userId || req.body.userEmail || null;
+        const jobId = req.uploadJobId;
+
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: true, message: 'No images uploaded' });
+        }
+
+        console.log(`\n📤 Upload received: ${req.files.length} images for job ${jobId}`);
+
+        // Rate limiting (same as URL mode)
+        if (userEmail) {
+            const user = await User.findOne({ email: userEmail });
+            if (user) {
+                const isMember = user.membershipType === 'admin' ||
+                    (user.membershipType !== 'free' && user.membershipExpiry && new Date() < user.membershipExpiry);
+
+                if (!isMember) {
+                    const FREE_MAX_TRANSLATIONS = 10;
+                    if (user.translationCount >= FREE_MAX_TRANSLATIONS) {
+                        // Clean up uploaded files
+                        const jobDir = path.join(UPLOAD_DIR, jobId);
+                        fs.rmSync(jobDir, { recursive: true, force: true });
+
+                        return res.status(429).json({
+                            error: true,
+                            message: `คุณใช้สิทธิ์ฟรีครบ ${FREE_MAX_TRANSLATIONS} ครั้งแล้ว`,
+                            limitReached: true
+                        });
+                    }
+
+                    user.translationCount = (user.translationCount || 0) + 1;
+                    user.lastTranslationAt = new Date();
+                    await user.save();
+                }
+            }
+        }
+
+        // Initialize job
+        jobs.set(jobId, {
+            status: 'pending',
+            progress: 0,
+            message: 'เริ่มต้นกระบวนการ...',
+            pages: [],
+            error: null,
+            totalPages: req.files.length
+        });
+
+        // Get file paths
+        const imagePaths = req.files.map(f => f.path);
+
+        // Start processing in background
+        processUploadJob(jobId, imagePaths, sourceLang || 'ko', targetLang || 'th', title || 'Uploaded Images', userEmail);
+
+        res.json({
+            success: true,
+            jobId: jobId,
+            message: `เริ่มแปล ${req.files.length} รูปภาพ`,
+            totalPages: req.files.length
+        });
+
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).json({ error: true, message: error.message });
+    }
+});
+
+// Process uploaded images
+async function processUploadJob(jobId, imagePaths, sourceLang, targetLang, title, userEmail) {
+    try {
+        updateJobStatus(jobId, 'processing', 5, 'กำลังเตรียมรูปภาพ...');
+
+        console.log(`\n🚀 Processing upload job ${jobId}`);
+        console.log(`   Images: ${imagePaths.length}`);
+        console.log(`   Language: ${sourceLang} → ${targetLang}`);
+
+        updateJobStatus(jobId, 'processing', 10, `กำลังแปล ${imagePaths.length} รูปภาพ...`);
+
+        // Translate uploaded images
+        const pages = await translateUploadedImages(
+            imagePaths,
+            sourceLang,
+            targetLang,
+            jobId,
+            (progress, message) => {
+                const adjustedProgress = 10 + Math.round(progress * 0.85);
+                updateJobStatus(jobId, 'processing', adjustedProgress, message);
+            }
+        );
+
+        // Save to database
+        updateJobStatus(jobId, 'processing', 98, 'กำลังบันทึกผลลัพธ์...');
+
+        const translation = new Translation({
+            jobId,
+            userId: userEmail,
+            sourceUrl: 'uploaded',
+            title: title,
+            sourceLang,
+            targetLang,
+            status: 'completed',
+            progress: 100,
+            pages: pages.map(p => ({
+                pageNumber: p.pageNumber,
+                originalUrl: p.originalUrl,
+                translatedUrl: p.translatedUrl,
+                hasText: p.hasText
+            })),
+            completedAt: new Date()
+        });
+
+        await translation.save();
+
+        // Final status
+        const job = jobs.get(jobId);
+        job.status = 'completed';
+        job.progress = 100;
+        job.message = 'แปลเสร็จสิ้น!';
+        job.pages = pages;
+
+        console.log(`✅ Upload job ${jobId} completed: ${pages.length} pages`);
+
+        // Clean up upload directory after processing
+        const uploadDir = path.join(UPLOAD_DIR, jobId);
+        setTimeout(() => {
+            fs.rmSync(uploadDir, { recursive: true, force: true });
+            console.log(`🗑️ Cleaned up upload dir for ${jobId}`);
+        }, 60000); // Clean after 1 minute
+
+    } catch (error) {
+        console.error(`❌ Upload job ${jobId} failed:`, error.message);
+
+        const job = jobs.get(jobId);
+        if (job) {
+            job.status = 'error';
+            job.message = error.message;
+            job.error = error.message;
+        }
+    }
+}
+
 module.exports = router;
+

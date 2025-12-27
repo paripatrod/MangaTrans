@@ -607,7 +607,141 @@ async function translateImages(imageUrls, sourceLang, targetLang, jobId, progres
     return results.sort((a, b) => a.pageNumber - b.pageNumber);
 }
 
+/**
+ * Translate a local image file
+ */
+async function translateLocalImage(imagePath, sourceLang, targetLang, jobId, pageNumber) {
+    console.log(`📖 Processing uploaded page ${pageNumber}: ${path.basename(imagePath)}`);
+
+    try {
+        // 1. Read local file
+        const imageData = fs.readFileSync(imagePath);
+        const imageBuffer = await sharp(imageData).png().toBuffer();
+
+        // 2. OCR
+        const textBlocks = await detectText(imageBuffer, sourceLang);
+
+        if (!textBlocks || textBlocks.length === 0) {
+            console.log(`   ⚪ No text found on page ${pageNumber}`);
+            const savedPath = await saveImage(imageBuffer, jobId, pageNumber, 'translated');
+            return {
+                translatedPath: savedPath,
+                hasText: false
+            };
+        }
+
+        // 3. Group into speech bubbles
+        const speechBubbles = groupIntoSpeechBubbles(textBlocks);
+        console.log(`   📝 Found ${speechBubbles.length} text blocks`);
+
+        // 4. Filter speech bubbles
+        const filteredBubbles = speechBubbles.filter(bubble =>
+            bubble.text.length > 1 &&
+            !isSfxOrBackground(bubble.text)
+        );
+
+        console.log(`   💬 Identified ${filteredBubbles.length} speech bubbles`);
+
+        if (filteredBubbles.length === 0) {
+            const savedPath = await saveImage(imageBuffer, jobId, pageNumber, 'translated');
+            return { translatedPath: savedPath, hasText: false };
+        }
+
+        // 5. Translate
+        const textsToTranslate = filteredBubbles.map(b => b.text);
+        const translations = await translateWithGemini(textsToTranslate, sourceLang, targetLang);
+
+        // 6. Map translations back to bubbles
+        const translatedBubbles = filteredBubbles.map((bubble, i) => ({
+            ...bubble,
+            translatedText: translations[i] || bubble.text,
+            bounds: bubble.bounds
+        }));
+
+        // 7. Render translated text
+        const translatedBuffer = await renderTranslatedText(imageBuffer, translatedBubbles);
+
+        // 8. Save
+        const savedPath = await saveImage(translatedBuffer, jobId, pageNumber, 'translated');
+
+        console.log(`   ✅ Page ${pageNumber} completed`);
+        return {
+            translatedPath: savedPath,
+            hasText: true
+        };
+
+    } catch (error) {
+        console.error(`   ❌ Error on page ${pageNumber}:`, error.message);
+
+        // Try to save original
+        try {
+            const imageData = fs.readFileSync(imagePath);
+            const savedPath = await saveImage(imageData, jobId, pageNumber, 'translated');
+            return { translatedPath: savedPath, hasText: false };
+        } catch {
+            return { translatedPath: null, hasText: false };
+        }
+    }
+}
+
+/**
+ * Translate multiple uploaded images
+ */
+async function translateUploadedImages(imagePaths, sourceLang, targetLang, jobId, progressCallback) {
+    const results = [];
+    const total = imagePaths.length;
+    const CONCURRENCY_LIMIT = 2; // Memory-safe for 512MB
+
+    const processPageWrapper = async (filePath, index) => {
+        try {
+            const result = await translateLocalImage(
+                filePath, sourceLang, targetLang, jobId, index + 1
+            );
+            return {
+                pageNumber: index + 1,
+                originalUrl: `uploaded:${path.basename(filePath)}`,
+                translatedUrl: result.translatedPath,
+                hasText: result.hasText
+            };
+        } catch (error) {
+            console.error(`Failed to translate uploaded page ${index + 1}:`, error.message);
+            return {
+                pageNumber: index + 1,
+                originalUrl: `uploaded:${path.basename(filePath)}`,
+                translatedUrl: null,
+                hasText: false,
+                error: error.message
+            };
+        }
+    };
+
+    // Process in batches
+    for (let i = 0; i < imagePaths.length; i += CONCURRENCY_LIMIT) {
+        const batch = imagePaths.slice(i, i + CONCURRENCY_LIMIT);
+        const batchNum = Math.floor(i / CONCURRENCY_LIMIT) + 1;
+        const totalBatches = Math.ceil(imagePaths.length / CONCURRENCY_LIMIT);
+
+        console.log(`🚀 Starting batch ${batchNum} (Pages ${i + 1}-${Math.min(i + CONCURRENCY_LIMIT, imagePaths.length)})`);
+
+        const batchPromises = batch.map((filePath, idx) =>
+            processPageWrapper(filePath, i + idx)
+        );
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+
+        if (progressCallback) {
+            const progress = Math.round((results.length / total) * 100);
+            progressCallback(progress, `กำลังแปล... (${results.length}/${total})`);
+        }
+    }
+
+    return results.sort((a, b) => a.pageNumber - b.pageNumber);
+}
+
 module.exports = {
     translateImage,
-    translateImages
+    translateImages,
+    translateUploadedImages
 };
+

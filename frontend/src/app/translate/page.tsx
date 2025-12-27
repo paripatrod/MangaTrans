@@ -177,9 +177,14 @@ export default function TranslatePage() {
                 setJobId(result.jobId);
                 setStatus("processing");
             } else {
-                // Upload mode - TODO: implement upload API
-                setError("ฟีเจอร์อัพโหลดกำลังพัฒนา กรุณาใช้ URL ก่อน");
-                setStatus("idle");
+                // Upload mode - use upload API
+                const result = await translateApi.uploadImages(
+                    uploadedFiles,
+                    sourceLang,
+                    "th"
+                );
+                setJobId(result.jobId);
+                setStatus("processing");
             }
         } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : "เกิดข้อผิดพลาด";
@@ -268,8 +273,8 @@ export default function TranslatePage() {
                                             type="button"
                                             onClick={() => setInputMode("url")}
                                             className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${inputMode === "url"
-                                                    ? "bg-violet-500 text-white shadow-lg"
-                                                    : "text-white/60 hover:text-white"
+                                                ? "bg-violet-500 text-white shadow-lg"
+                                                : "text-white/60 hover:text-white"
                                                 }`}
                                         >
                                             <Link2 className="w-4 h-4" />
@@ -279,8 +284,8 @@ export default function TranslatePage() {
                                             type="button"
                                             onClick={() => setInputMode("upload")}
                                             className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${inputMode === "upload"
-                                                    ? "bg-violet-500 text-white shadow-lg"
-                                                    : "text-white/60 hover:text-white"
+                                                ? "bg-violet-500 text-white shadow-lg"
+                                                : "text-white/60 hover:text-white"
                                                 }`}
                                         >
                                             <Upload className="w-4 h-4" />

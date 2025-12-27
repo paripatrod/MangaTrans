@@ -50,6 +50,33 @@ export const translateApi = {
 
     getStatus: (jobId: string) =>
         apiRequest<{ status: string; progress: number; message: string; pages: unknown[] }>(`/translate/status/${jobId}`),
+
+    uploadImages: async (files: File[], sourceLang: string, targetLang: string, token?: string) => {
+        const formData = new FormData();
+        files.forEach((file) => {
+            formData.append('images', file);
+        });
+        formData.append('sourceLang', sourceLang);
+        formData.append('targetLang', targetLang);
+
+        const headers: HeadersInit = {};
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(`${API_BASE_URL}/translate/upload`, {
+            method: 'POST',
+            headers,
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Upload failed');
+        }
+
+        return response.json() as Promise<{ success: boolean; jobId: string; totalPages: number }>;
+    },
 };
 
 // History API
