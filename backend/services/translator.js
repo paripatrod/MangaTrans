@@ -659,7 +659,7 @@ async function saveImage(imageBuffer, jobId, pageNumber, suffix) {
 async function translateImages(imageUrls, sourceLang, targetLang, jobId, progressCallback, referer) {
     const results = [];
     const total = imageUrls.length;
-    const CONCURRENCY_LIMIT = 3; // Process 3 pages at once for speed
+    const CONCURRENCY_LIMIT = 5; // TURBO: Process 5 pages at once
 
     // Helper wrapper to catch errors and return consistent result format
     const processPageWrapper = async (url, index) => {

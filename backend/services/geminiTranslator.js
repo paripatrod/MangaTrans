@@ -18,6 +18,7 @@ const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
 /**
  * Translate texts using Gemini with Manga Context
+ * ULTRA FAST: Parallel batch processing
  * @param {string[]} texts - Array of text strings from bubbles
  * @param {string} sourceLang - Source language code
  * @param {string} targetLang - Target language code
@@ -26,10 +27,13 @@ const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 async function translateWithGemini(texts, sourceLang, targetLang) {
     if (!texts || texts.length === 0) return [];
 
-    console.log(`🧠 Gemini is thinking... processing ${texts.length} bubbles.`);
+    console.log(`🧠 Gemini TURBO processing ${texts.length} bubbles...`);
 
-    // Batch size: 10 bubbles (smaller for higher quality)
-    const BATCH_SIZE = 10;
+    // TURBO: Larger batch size = fewer API calls
+    const BATCH_SIZE = 20;
+    // TURBO: Process multiple batches in parallel
+    const PARALLEL_BATCHES = 3;
+
     const allTranslated = new Array(texts.length).fill(null);
     const batches = [];
 
@@ -40,23 +44,28 @@ async function translateWithGemini(texts, sourceLang, targetLang) {
         });
     }
 
-    console.log(`   📦 Split into ${batches.length} batches.`);
+    console.log(`   ⚡ ${batches.length} batches (parallel: ${PARALLEL_BATCHES})`);
 
-    for (const batch of batches) {
-        try {
-            console.log(`   🔄 Processing Batch ${Math.floor(batch.index / BATCH_SIZE) + 1}/${batches.length}...`);
+    // Process batches in parallel groups
+    for (let i = 0; i < batches.length; i += PARALLEL_BATCHES) {
+        const parallelGroup = batches.slice(i, i + PARALLEL_BATCHES);
 
-            // No delay - maximum speed with Gemini 2.5 Flash
+        const results = await Promise.all(
+            parallelGroup.map(async (batch) => {
+                try {
+                    const translatedChunk = await processBatchWithRetry(batch.chunk, sourceLang, targetLang);
+                    return { index: batch.index, translations: translatedChunk };
+                } catch (error) {
+                    console.error(`   ❌ Batch failed:`, error.message);
+                    return { index: batch.index, translations: batch.chunk };
+                }
+            })
+        );
 
-            const translatedChunk = await processBatchWithRetry(batch.chunk, sourceLang, targetLang);
-
-            for (let j = 0; j < translatedChunk.length; j++) {
-                allTranslated[batch.index + j] = translatedChunk[j];
-            }
-        } catch (error) {
-            console.error(`   ❌ Batch failed after retries:`, error.message);
-            for (let j = 0; j < batch.chunk.length; j++) {
-                allTranslated[batch.index + j] = batch.chunk[j];
+        // Merge results
+        for (const result of results) {
+            for (let j = 0; j < result.translations.length; j++) {
+                allTranslated[result.index + j] = result.translations[j];
             }
         }
     }
@@ -66,7 +75,7 @@ async function translateWithGemini(texts, sourceLang, targetLang) {
 
 async function processBatchWithRetry(texts, sourceLang, targetLang) {
     let attempt = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 2; // Reduced retries for speed
     let lastError = null;
 
     while (attempt < maxAttempts) {
@@ -74,15 +83,15 @@ async function processBatchWithRetry(texts, sourceLang, targetLang) {
         try {
             return await processBatch(texts, sourceLang, targetLang);
         } catch (error) {
-            console.warn(`    ⚠️ Batch attempt ${attempt} failed: ${error.message}`);
+            console.warn(`    ⚠️ Attempt ${attempt} failed: ${error.message}`);
 
             if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
-                const waitTime = 30000 + (attempt * 10000);
-                console.log(`    ⏳ Quota exceeded. Waiting ${waitTime / 1000}s...`);
+                const waitTime = 5000 + (attempt * 2000); // Reduced wait times
+                console.log(`    ⏳ Rate limit. Waiting ${waitTime / 1000}s...`);
                 await new Promise(r => setTimeout(r, waitTime));
             } else {
                 lastError = error;
-                if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 2000));
+                if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 500)); // Quick retry
             }
         }
     }
